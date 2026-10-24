@@ -1,0 +1,55 @@
+name: Compila la mod
+
+on: [push, workflow_dispatch]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Estrai il progetto dallo zip
+        run: |
+          find . -maxdepth 3 -name '*.zip' -exec unzip -q -o {} \;
+          if [ ! -f osservatore/build.gradle ]; then
+            echo "ERRORE: non trovo il progetto. Carica osservatore-mod.zip nel repo."
+            exit 1
+          fi
+
+      - name: Installa Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Installa Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: 9.6.0
+          build-root-directory: osservatore
+
+      - name: Compila
+        working-directory: osservatore
+        run: gradle build --no-daemon
+
+      - name: Pubblica il .jar nelle Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          JAR=$(ls osservatore/build/libs/*.jar | grep -v -- '-sources' | head -n 1)
+          echo "File: $JAR"
+          gh release delete ultima-versione --yes --cleanup-tag || true
+          gh release create ultima-versione "$JAR" --title "Mod pronta" --notes "Compilata automaticamente."
+
+      - name: Salva anche come artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: osservatore-mod
+          path: |
+            osservatore/build/libs/*.jar
+            !osservatore/build/libs/*-sources.jar
